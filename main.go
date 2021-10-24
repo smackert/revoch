@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
@@ -8,10 +9,15 @@ import (
 	"time"
 )
 
+//var inputFile string = ""
+var bufferSize int64 = 512
+
+//var mapFile string = ""
+
 func main() {
 
 	inputFile := flag.String("f", "", "Path to the file you wish to analyze.")
-	inputBufferSize := flag.Int64("s", 512, "Define sector size in bytes.")
+	bufferSize = *flag.Int64("s", 512, "Define sector size in bytes.")
 	flag.Parse()
 	if *inputFile == "" {
 		fmt.Println("A file name is required. Exiting..")
@@ -27,7 +33,7 @@ func main() {
 	//const bufferSize int64 = 837463 // 1mb (1000000)
 
 	startTime := time.Now()
-	ReadFile(*inputFile, *inputBufferSize)
+	ReadFile(*inputFile)
 	fmt.Printf("Completed in %s", time.Since((startTime).Truncate(time.Second)))
 
 	//ReadFile(volImg, bufferSize)
@@ -45,7 +51,7 @@ func errCheck(err error) {
 	}
 }
 
-func ReadFile(filePath string, bufferSize int64) {
+func ReadFile(filePath string) {
 
 	file, err := os.Open(filePath)
 	errCheck(err)
@@ -56,48 +62,58 @@ func ReadFile(filePath string, bufferSize int64) {
 
 	fmt.Println("File:", f.Name(), "\nSize:", f.Size(), "\nChunks:", (f.Size() / bufferSize))
 
-	buffer := make([]byte, bufferSize)
-
 	var offset int64
-
+	//writeChan := make(chan map[int64]int, 5000)
 	chunk := 0
 	mapFile := makeMapFile(filePath)
+	bw := bufio.NewWriterSize(mapFile, 1048576)
+	/*
+		    for offset
+			inputdata = read up to 1mb
+			for len(inputdata) / buffersize
+				go ent(inputdata, bufoffset)
+				bufoffset += buffesize
+			offset += len(inputdata)
+	*/
+
 	for offset = 0; (offset + bufferSize) < f.Size(); offset += bufferSize { // this cuts the tail off. fix that l8r
-		_, err := file.ReadAt(buffer, offset)
-		errCheck(err)
-		sectorEntropy := make(map[int64]int)
-		sectorEntropy[offset] = Shannon(buffer[:])
-		writeMapBuf(mapFile, sectorEntropy)
+		calcEntropy(*file, offset, bw)
 		chunk += 1
 		fmt.Printf("\r%f%% Complete..", (float32(float32(chunk)/(float32(f.Size())/float32(512))) * float32(100)))
 	}
-
+	//bw.Flush()
+	mapFile.Close()
 	fmt.Println("\nFinished!")
 }
 
-func makeMapFile(fp string) string {
+func makeMapFile(fp string) *os.File {
 
-	f, err := os.Create(fp + ".map.txt")
+	f, err := os.OpenFile(fp+".map.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	errCheck(err)
-	defer f.Close()
-	return f.Name()
+	//defer f.Close()
+	return f
 
 }
 
-func writeMapBuf(mf string, data map[int64]int) {
+func calcEntropy(file os.File, offset int64, bw *bufio.Writer) {
+	buf := make([]byte, bufferSize)
+	_, err := file.ReadAt(buf, offset)
+	errCheck(err)
+	se := make(map[int64]int)
+	se[offset] = Shannon(buf[:])
+	writeMapBuf(se, bw)
+}
+
+func writeMapBuf(se map[int64]int, bw *bufio.Writer) {
 	/*
 		    var writeBuffer = make(map[int64]int)
 			for k, v := range data {
 				writeBuffer[k] = v
 			}
 	*/
-	//if len(writeBuffer) > 1000 {
-	f, err := os.OpenFile(mf, os.O_APPEND|os.O_WRONLY, 0600)
-	errCheck(err)
-	for k, v := range data {
-		_, err = f.WriteString(strconv.FormatInt(k, 10) + "," + strconv.Itoa(v) + "\n")
+	for k, v := range se {
+		_, err := bw.WriteString(strconv.FormatInt(k, 10) + "," + strconv.Itoa(v) + "\n")
 		errCheck(err)
 	}
-	defer f.Close()
-	//}
+
 }
