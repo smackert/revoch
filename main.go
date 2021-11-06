@@ -69,7 +69,7 @@ func ReadFile(filePath string) {
 
 	bw.Flush()
 	mapFile.Close()
-	fmt.Println("Finished!")
+	fmt.Println("Finished!             ")
 }
 
 func makeMapFile(fp string) *os.File {
